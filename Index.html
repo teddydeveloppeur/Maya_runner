@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Aventurier Maya - Mobile Modules</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body {margin:0; overflow:hidden; font-family:sans-serif;}
+  canvas {display:block;}
+  #hud {position:absolute; top:10px; left:10px; color:white; font-size:20px; z-index:100;}
+  #retryScreen {position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; flex-direction: column; color:white; font-size:24px; display:none; z-index:200;}
+  button {font-size:20px; margin-top:20px; padding:10px 20px; cursor:pointer;}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  Score: <span id="score">0</span> | Pièces: <span id="coins">0</span> | Niveau: <span id="level">1</span>
+</div>
+
+<div id="retryScreen">
+  <div>Vous avez perdu !</div>
+  <div>Reprendre pour 60 pièces ?</div>
+  <button id="retryBtn">Reprendre</button>
+  <button id="restartBtn">Recommencer</button>
+</div>
+
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let score = 0;
+let coins = 0;
+let levelCoins = 30;
+let gameSpeed = 4;
+let gravity = 0.8;
+let gameOver = false;
+let currentLevel = 1;
+let currentModule = 1; // 1:Jungle,2:Temple,3:Ruines
+
+// Joueur
+const player = {x:50, y:300, width:50, height:50, dy:0, jumpPower:-15, rolling:false};
+
+// Obstacles et pièces
+let obstacles = [];
+let coinsArray = [];
+
+// Module couleurs
+const moduleColors = {1:'#a3d9a5',2:'#f0a500',3:'#70a1ff'};
+
+// Générer obstacles et pièces aléatoires pour un niveau
+function generateLevel(module, level){
+  obstacles = [];
+  coinsArray = [];
+  let numObstacles = Math.min(5 + Math.floor(level/8),10); // plus on avance, plus d'obstacles
+  let numCoins = Math.min(3 + Math.floor(level/10), 5); 
+  // obstacles
+  for(let i=0;i<numObstacles;i++){
+    let width = 30+Math.random()*30;
+    let height = 30+Math.random()*50;
+    let y = Math.random()>0.5? 350-height : 350-height-50; // bloc bas ou surélevé
+    let x = 400 + i*150 + Math.random()*100;
+    obstacles.push({x,y,width,height});
+  }
+  // pièces
+  for(let i=0;i<numCoins;i++){
+    let x = 450 + i*150 + Math.random()*100;
+    let y = 250 + Math.random()*50;
+    coinsArray.push({x,y,width:20,height:20,collected:false});
+  }
+  document.body.style.backgroundColor = moduleColors[module];
+}
+
+// Swipe mobile
+let touchStartY = 0;
+let touchEndY = 0;
+canvas.addEventListener('touchstart', e => {touchStartY = e.changedTouches[0].clientY;});
+canvas.addEventListener('touchend', e => {touchEndY = e.changedTouches[0].clientY; handleSwipe();});
+function handleSwipe(){
+  let diff = touchStartY - touchEndY;
+  if(diff > 50 && player.y + player.height >= 350 && !player.rolling){player.dy = player.jumpPower;}
+  else if(diff < -50 && !player.rolling){player.rolling=true; setTimeout(()=>player.rolling=false,1000);}
+}
+
+// Détection collision
+function checkCollision(rect1, rect2){
+  return rect1.x < rect2.x + rect2.width &&
+         rect1.x + rect1.width > rect2.x &&
+         rect1.y < rect2.y + rect2.height &&
+         rect1.y + rect1.height > rect2.y;
+}
+
+// Feu d'artifice simple
+function firework(x,y){
+  for(let i=0;i<20;i++){
+    let angle = Math.random()*2*Math.PI;
+    let speed = 2+Math.random()*3;
+    let dx = Math.cos(angle)*speed;
+    let dy = Math.sin(angle)*speed;
+    let r= Math.random()*255|0, g=Math.random()*255|0, b=Math.random()*255|0;
+    let particle = {x,y,dx,dy,r,g,b,life:30};
+    fireworks.push(particle);
+  }
+}
+let fireworks=[];
+
+// Boucle de jeu
+function update() {
+  if(gameOver) return;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Avancer joueur automatiquement
+  player.x += gameSpeed/2;
+  player.dy += gravity;
+  player.y += player.dy;
+  if(player.y + player.height > 350){player.y = 350 - player.height; player.dy = 0;}
+
+  // Dessiner joueur
+  ctx.fillStyle = player.rolling?'orange':'yellow';
+  ctx.fillRect(player.x, player.y, player.width, player.height);
+
+  // Obstacles
+  ctx.fillStyle='red';
+  obstacles.forEach(obs=>{
+    obs.x -= gameSpeed;
+    ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+    if(checkCollision(player,obs)){
+      gameOver=true; showRetryScreen();
+    }
+  });
+
+  // Pièces
+  ctx.fillStyle='gold';
+  coinsArray.forEach(c=>{
+    if(!c.collected){
+      c.x -= gameSpeed;
+      ctx.fillRect(c.x,c.y,c.width,c.height);
+      if(checkCollision(player,c)){c.collected=true; coins++; if(coins>999) coins=999;}
+    }
+  });
+
+  // Score
+  score+=1;
+  document.getElementById('score').innerText=score;
+  document.getElementById('coins').innerText=coins;
+
+  // Feu d'artifice
+  fireworks.forEach(p=>{
+    ctx.fillStyle=`rgb(${p.r},${p.g},${p.b})`;
+    ctx.fillRect(p.x,p.y,4,4);
+    p.x+=p.dx; p.y+=p.dy; p.dy+=0.1; p.life--;
+  });
+  fireworks = fireworks.filter(p=>p.life>0);
+
+  // Vérifier fin de niveau
+  if(player.x>canvas.width){
+    firework(player.x, player.y-50);
+    nextLevel();
+    return;
+  }
+
+  requestAnimationFrame(update);
+}
+
+// Niveau suivant
+function nextLevel(){
+  player.x=50; player.y=300; player.dy=0;
+  currentLevel++;
+  if(currentLevel>40){
+    currentLevel=1;
+    currentModule++;
+    if(currentModule>3){alert("Bravo! Vous avez terminé le jeu."); currentModule=1;}
+  }
+  document.getElementById('level').innerText=currentLevel;
+  generateLevel(currentModule,currentLevel);
+  update();
+}
+
+// Écran reprise
+const retryScreen=document.getElementById('retryScreen');
+const retryBtn=document.getElementById('retryBtn');
+const restartBtn=document.getElementById('restartBtn');
+
+function showRetryScreen(){retryScreen.style.display='flex';}
+retryBtn.addEventListener('click',()=>{
+  if(coins>=60){coins-=60; player.x-=100; gameOver=false; retryScreen.style.display='none'; update();}
+  else{alert('Pas assez de pièces pour reprendre !');}
+});
+restartBtn.addEventListener('click',()=>{
+  coins=Math.max(coins,0); player.x=50; player.y=300; player.dy=0; gameOver=false;
+  generateLevel(currentModule,currentLevel); retryScreen.style.display='none'; update();
+});
+
+// Démarrage
+generateLevel(currentModule,currentLevel);
+update();
+</script>
+
+</body>
+</html>
